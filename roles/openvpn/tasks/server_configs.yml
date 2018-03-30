@@ -1,0 +1,133 @@
+---
+
+
+- name: "Check CA dir is exist or not"
+  become: yes
+  file:
+      state: absent
+      path: "{{ openvpn.server.ca_dir }}/"
+
+- name: "New CA dir"
+  become: yes
+  command: >
+      make-cadir {{ openvpn.server.ca_dir }}
+
+- name: "Setup CA vars"
+  become: yes
+  shell: >
+      sed -i -r "s/(KEY_COUNTRY=).*/\1'{{ openvpn.server.key.country }}'/g" {{ openvpn.server.ca_dir }}/vars;
+      sed -i -r "s/(KEY_PROVINCE=).*/\1'{{ openvpn.server.key.province }}'/g" {{ openvpn.server.ca_dir }}/vars;
+      sed -i -r "s/(KEY_CITY=).*/\1'{{ openvpn.server.key.city }}'/g" {{ openvpn.server.ca_dir }}/vars;
+      sed -i -r "s/(KEY_ORG=).*/\1'{{ openvpn.server.key.org }}'/g" {{ openvpn.server.ca_dir }}/vars;
+      sed -i -r "s/(KEY_EMAIL=).*/\1'{{ openvpn.server.key.email }}'/g" {{ openvpn.server.ca_dir }}/vars;
+      sed -i -r "s/(KEY_OU=).*/\1'{{ openvpn.server.key.ou }}'/g" {{ openvpn.server.ca_dir }}/vars;
+      sed -i -r "s/(KEY_NAME=).*/\1'{{ openvpn.server.key.name }}'/g" {{ openvpn.server.ca_dir }}/vars;
+
+- name: "Build the certificate authority"
+  become: yes
+  shell: >
+      source vars;
+      ./clean-all;
+      yes "" | ./build-ca;
+  args: 
+      chdir: "{{ openvpn.server.ca_dir }}"
+
+- name: "Create the server certificate, Diffie-Hellman key, and encryption files. This might take a few minutes to complete."
+  become: yes
+  shell: >
+      source vars;
+      ./pkitool --server {{ openvpn.server.key.name }};
+      yes "" | ./build-dh;
+      openvpn --genkey --secret keys/ta.key;
+  args: 
+      chdir: "{{ openvpn.server.ca_dir }}"
+
+- name: "Copy key and certificates to /etc/openvpn"
+  become: yes
+  copy:
+     remote_src: yes
+     src: "{{ openvpn.server.ca_dir }}/keys/{{ item }}"
+     dest: "/etc/openvpn/"
+  with_items:
+     - "ca.crt"
+     - "{{ openvpn.server.key.name }}.crt"
+     - "{{ openvpn.server.key.name }}.key"
+     - "ta.key"
+     - "dh2048.pem"
+
+- name: "Generate server.conf"
+  become: yes
+  shell: >
+     gunzip -c /usr/share/doc/openvpn/examples/sample-config-files/server.conf.gz | sudo tee /etc/openvpn/server.conf
+
+- name: "Adjust OpenVPN server configuration"
+  become: yes
+  shell: >
+      sed -i -r "/tls-auth/s/^;//g" /etc/openvpn/server.conf;
+      sed -i -r "/tls-auth/ a \key-direction 0" /etc/openvpn/server.conf;
+      sed -i -r "/cipher AES-128-CBC/s/^;//g" /etc/openvpn/server.conf;
+      sed -i -r "/cipher AES-128-CBC/ a \auth SHA256" /etc/openvpn/server.conf;
+      sed -i -r "/user nobody/s/^;//g" /etc/openvpn/server.conf;
+      sed -i -r "/group nogroup/s/^;//g" /etc/openvpn/server.conf;
+      sed -i -r '/push "redirect-gateway def1 bypass-dhcp"/s/^;//g' /etc/openvpn/server.conf;
+      echo "mode server" >> /etc/openvpn/server.conf;
+      echo "tls-server" >> /etc/openvpn/server.conf;
+
+- name: "Adjust the name of key and certificate"
+  become: yes
+  shell: >
+      sed -i -r "s/cert.*.crt/cert {{ openvpn.server.key.name }}.crt/g" /etc/openvpn/server.conf;
+      sed -i -r "s/key.*.key/key {{ openvpn.server.key.name }}.key/g" /etc/openvpn/server.conf;
+
+#- name: "Allow IP Forwarding"
+#  become: yes
+#  lineinfile:
+#      dest: /etc/sysctl.conf
+#      regexp: '^#net.ipv4.ip_forward=1$'
+#      line: net.ipv4.ip_forward=1
+#      backup: yes
+
+- name: "Let IP Forwarding be available permanently"
+  become: yes
+  shell: >
+      sed -i -r "/net.ipv4.ip_forward=1/s/^#//g" /etc/sysctl.conf;
+      sysctl -p;
+
+- name: "Template out NAT rules"
+  template: 
+      src: templates/before_nat.rules.j2
+      dest: "{{ ansible_env.HOME }}/before_nat.rules"
+ 
+- name: "Inject NAT rules to enable OpenVPN traffic"
+  become: yes
+  shell: >
+      cp /etc/ufw/before.rules /etc/ufw/before.rules.old;
+      sed -e "\$r {{ ansible_env.HOME }}/before_nat.rules" /etc/ufw/before.rules > /etc/ufw/before.rules.after;
+      mv /etc/ufw/before.rules.after /etc/ufw/before.rules;
+
+- name: "Adjust UFW forward policies"
+  become: yes
+  shell: >
+      sed -i -r "s/(DEFAULT_FORWARD_POLICY=)(.*)/\1\"ACCEPT\"/g" /etc/default/ufw
+
+- name: "Enable OpenSSH port"
+  become: yes
+  ufw:
+      rule: allow
+      name: OpenSSH
+
+- name: "Enable OpenVPN port"
+  become: yes
+  ufw:
+      rule: allow
+      port: 1194
+
+- name: "Enable ufw logging"
+  become: yes
+  ufw: logging=on
+  notify:
+     - restart ufw
+
+- name: "Enable Firewall"
+  become: yes
+  ufw: state=enabled

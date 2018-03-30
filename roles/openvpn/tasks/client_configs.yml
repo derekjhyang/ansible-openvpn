@@ -1,0 +1,64 @@
+
+- name: "Generate client certificate key"
+  become: yes
+  expect:
+      chdir: "{{ openvpn.server.ca_dir }}"
+      command: /bin/bash -c "source vars; ./pkitool --pass {{ openvpn.client.key.name }}"
+      echo: "yes"
+      timeout: 50
+      responses:
+          'Enter PEM pass phrase': '{{ openvpn.client.key.password }}'
+          'Verifying - Enter PEM pass phrase': '{{ openvpn.client.key.password }}'
+  
+- name: "Create client certificate configs dir"
+  become: yes
+  file: 
+      owner: "{{ ansible_env.USER }}"
+      group: "{{ ansible_env.USER }}"
+      path: "{{ openvpn.client.config_dir }}"
+      state: directory
+      mode: 0700
+
+- name: "Copy client sample configs from remote host itself"
+  become: yes
+  copy:
+      remote_src: yes
+      src: /usr/share/doc/openvpn/examples/sample-config-files/client.conf
+      dest: "{{ openvpn.client.config_dir }}/base.conf"
+
+- name: "Adjust client configs"
+  become: yes
+  shell: >
+      sed -i -r "/remote.*1194/s/(remote ).*/\1{{item}} 1194/g" "{{ openvpn.client.config_dir }}/base.conf";
+      sed -i -r "s/(proto ).*/\1udp/g" "{{ openvpn.client.config_dir }}/base.conf";
+      sed -i -r "/ca ca.crt/s/^/#/g" "{{ openvpn.client.config_dir }}/base.conf";
+      sed -i -r "/cert client.crt/s/^/#/g" "{{ openvpn.client.config_dir }}/base.conf";
+      sed -i -r "/key client.key/s/^/#/g" "{{ openvpn.client.config_dir }}/base.conf";
+      sed -i -r "/;cipher x/ a cipher AES-128-CBC" "{{ openvpn.client.config_dir }}/base.conf";
+      sed -i -r "/cipher AES-128-CBC/ a \auth SHA256" "{{ openvpn.client.config_dir }}/base.conf";
+      sed -i -r "/user nobody/s/^;//g" "{{ openvpn.client.config_dir }}/base.conf";
+      sed -i -r "/group nogroup/s/^;//g" "{{ openvpn.client.config_dir }}/base.conf";
+      echo "key-direction 1" >> "{{ openvpn.client.config_dir }}/base.conf";
+      echo "tls-client" >> "{{ openvpn.client.config_dir }}/base.conf";
+      echo "# script-security 2" >> "{{ openvpn.client.config_dir }}/base.conf";
+      echo "# up /etc/openvpn/update-resolv-conf" >> "{{ openvpn.client.config_dir }}/base.conf";
+      echo "# down /etc/openvpn/update-resolv-conf" >> "{{ openvpn.client.config_dir }}/base.conf";
+  with_items: "{{ groups['openvpn-server'] }}"
+
+- name: "Template out client configs generation script"
+  become: yes
+  template: 
+      src: templates/make_client_config.sh.j2
+      dest: "{{ openvpn.client.config_dir }}/make_client_config.sh"
+      mode: 0700
+
+- name: "Make client configs files directory"
+  become: yes
+  file:
+      state: directory
+      path: "{{ openvpn.client.config_dir }}/files"
+
+- name: "Generate client configs"
+  become: yes
+  shell: >
+     "{{ openvpn.client.config_dir }}"/make_client_config.sh "{{ openvpn.client.key.name }}"

@@ -1,0 +1,26 @@
+
+- name: "Install OpenVPN packages"
+  become: yes
+  action: >
+      {{ ansible_pkg_mgr }} name={{ item }} state=present update_cache=yes
+  with_items:
+      - openvpn
+      - easy-rsa
+      - python2.7
+      - python-pip
+      - python-dev
+  environment: "{{ proxy_env }}"  
+
+- name: "Upgrade pip python libraries"
+  become: yes
+  pip:
+      name: pip
+      extra_args: --upgrade
+  environment: "{{ proxy_env }}"  
+
+- name: "Install expect python libraries"
+  become: yes 
+  pip:
+      name: pexpect
+      state: latest
+  environment: "{{ proxy_env }}"  

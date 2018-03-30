@@ -1,0 +1,26 @@
+
+proxy_env:
+    http_proxy: 
+    https_proxy: 
+    no_proxy: localhost,127.0.0.1
+
+openvpn:
+     server:
+         ca_dir: "/opt/openvpn-ca"
+         key:
+             name: "server"
+             country: "TW"
+             province: "TW"
+             city: "Taipei"
+             org: ""
+             email: ""
+             ou: ""
+     client:
+         config_dir: "/home/ubuntu/openvpn-client-configs"
+         key:
+             name: ""
+             password: ""
+
+default_interface: eth0
+
+enable_openvpn: "yes"

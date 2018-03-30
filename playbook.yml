@@ -1,0 +1,17 @@
+
+- hosts: all
+  become: yes
+  gather_facts: false
+  tasks:
+      - name: install python2
+        raw: sudo apt-get install -y python-simplejson
+        environment: "{{ proxy_env }}"
+
+- hosts:
+     - openvpn-server
+  roles:
+     - { role: openvpn, tags: openvpn, when: enable_openvpn | bool }
+
+- hosts: all
+  handlers:
+     - include: handlers.yml

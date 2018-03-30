@@ -1,0 +1,9 @@
+
+- include: server_install.yml
+  tags: ['openvpn-server']
+- include: server_configs.yml
+  tags: ['openvpn-server', 'server-key']
+- include: server_start.yml
+  tags: ['openvpn-server']
+- include: client_configs.yml
+  tags: ['client-key']

@@ -1,0 +1,11 @@
+
+- name: "Enable OpenVPN service on boot"
+  become: yes
+  systemd:
+       name: "openvpn@{{ openvpn.server.key.name }}"
+       enabled: yes
+
+- name: "Start OpenVPN service"
+  become: yes
+  systemd: state=started name=openvpn@{{ openvpn.server.key.name }}
+
