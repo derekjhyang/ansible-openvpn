@@ -1,6 +1,6 @@
 ansible-openvpn
 ================
-> This playbook helps you deploy OpenVPN at your workstation
+This playbook helps you deploy OpenVPN at your workstation
 
 # Quickstart
 ## Requirement
